@@ -42,12 +42,12 @@ const NOUNS = [
 export class ViewerService {
   private readonly TOTAL_VIEWERS = 1_000_000;
 
-  generateViewers(count: number): Viewer[] {
+  generateViewers(count: number, startId = 0): Viewer[] {
     const viewers: Viewer[] = [];
 
     for (let i = 0; i < count; i++) {
       viewers.push({
-        id: i + 1,
+        id: startId + i + 1,
         username: `${this.randomFrom(ADJECTIVES)}${this.randomFrom(NOUNS)}${this.randomBetween(1, 9999)}`,
         watchTimeMin: this.randomBetween(1, 240),
         isLive: Math.random() > 0.08,
@@ -65,7 +65,7 @@ export class ViewerService {
     await new Promise((resolve) => setTimeout(resolve, 80));
 
     return {
-      data: this.generateViewers(take),
+      data: this.generateViewers(take, skip),
       total: this.TOTAL_VIEWERS,
     };
   }

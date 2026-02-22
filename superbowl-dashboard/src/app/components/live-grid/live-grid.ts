@@ -1,16 +1,6 @@
-import {
-  Component,
-  inject,
-  signal,
-  computed,
-  ChangeDetectionStrategy,
-} from "@angular/core";
-import {
-  KENDO_GRID,
-  PageChangeEvent,
-  GridDataResult,
-} from "@progress/kendo-angular-grid";
-import { ViewerService } from "../../services/viewer";
+import { Component, inject, signal, ChangeDetectionStrategy } from "@angular/core";
+import { KENDO_GRID } from "@progress/kendo-angular-grid";
+import { ViewerService, Viewer } from "../../services/viewer";
 
 @Component({
   selector: "app-live-grid",
@@ -21,31 +11,27 @@ import { ViewerService } from "../../services/viewer";
 export class LiveGrid {
   private viewerService = inject(ViewerService);
 
-  skip = signal(0);
-  loading = signal(false);
   isConnected = signal(false);
+  loading = signal(false);
+  viewers = signal<Viewer[]>([]);
+  pageSize = 1_000;
 
-  readonly pageSize = 100;
-
-  private gridData = signal<GridDataResult>({ data: [], total: 0 });
-
-  gridView = computed<GridDataResult>(() => this.gridData());
-  total = computed(() => this.gridData().total);
-
-  async connect(): Promise<void> {
+  connect(): void {
     this.isConnected.set(true);
-    await this.loadPage(0);
+    this.loadMore();
   }
 
-  async onPageChange(event: PageChangeEvent): Promise<void> {
-    this.skip.set(event.skip);
-    await this.loadPage(event.skip);
+  onScrollBottom(): void {
+    if (this.loading()) return;
+    this.loadMore();
   }
 
-  private async loadPage(skip: number): Promise<void> {
+  private loadMore(): void {
     this.loading.set(true);
-    const result = await this.viewerService.fetchPage(skip, this.pageSize);
-    this.gridData.set(result);
-    this.loading.set(false);
+    
+    this.viewerService.fetchPage(this.viewers().length, this.pageSize).then((result) => {
+      this.viewers.update((current) => [...current, ...result.data]);
+      this.loading.set(false);
+    });
   }
 }

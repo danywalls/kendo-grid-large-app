@@ -1,1 +1,43 @@
-/* You can add global styles to this file, and also import other style files */
+@import '@progress/kendo-theme-default';
+
+body {
+  font-family: sans-serif;
+}
+.dashboard {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+h1,
+h2,
+p {
+  margin-bottom: 8px;
+  color: #333;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+button {
+  padding: 8px 16px;
+  cursor: pointer;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  background: white;
+}
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.tabs button.active {
+  border-color: #ff6358;
+  background: #ff6358;
+  color: white;
+}
+.status {
+  color: #2e7d32;
+  font-weight: 500;
+  margin-bottom: 12px;
+}

@@ -306,23 +306,19 @@ But wait. We have solved the rendering issue, but what about the data itself? Ri
 
 Even worse! What if this data is a live feed from the Super Bowl stream and we want to monitor one million concurrent users in real-time? Let's take it to the next level and implement server-side data fetching.
 
-## Server-Side Virtual Scrolling with Signals
+## Server-Side Data Fetching with Endless Scrolling
 
-Here's the reality: the Super Bowl has **120 million viewers**. You can't load all of them into the browser. Instead, the grid should ask the server for only the rows it needs, page by page, as the user scrolls.
+Here's the reality: the Super Bowl has **120 million viewers**. You can't load all of them into the browser at once. Instead, the grid should fetch data page by page as the user scrolls — loading only what's needed, when it's needed.
 
-This is **server-side virtual scrolling**: the grid calculates which rows are visible, fires a `pageChange` event, and we fetch just that slice from the backend. Remember the `fetchPage` method in our `ViewerService`? It already simulates exactly this: a paginated API that returns only the requested slice of data.
+Kendo UI Grid supports this out of the box with the [`(scrollBottom)`](https://www.telerik.com/kendo-angular-ui/components/grid/api/gridcomponent#scrollbottom) event. When the user scrolls to the bottom of the current data, the grid fires this event, and we simply fetch the next page and append it. Combined with the virtual scrolling we already set up, this creates a seamless experience: the grid renders only visible rows while continuously loading more data in the background.
 
-Let's build the grid component:
+Let's build it. Generate a new component:
 
 ```bash
 ng g c components/live-grid
 ```
 
-Now we will open `src/app/components/live-grid/live-grid.ts`. We'll use Angular's built-in `resource()` API to fetch data. This function creates an async resource tied to a signal: whenever the signal changes, `resource()` automatically fetches new data and cancels any pending request.
-
-We will listen to the native `(pageChange)` event of the Grid to update a `skip` signal, and `resource()` will handle the rest.
-
-Replace the file content with the following:
+Open `src/app/components/live-grid/live-grid.ts` and replace the content with:
 
 ```typescript
 import {
@@ -330,15 +326,10 @@ import {
   inject,
   signal,
   computed,
-  resource,
   ChangeDetectionStrategy,
 } from "@angular/core";
-import {
-  KENDO_GRID,
-  PageChangeEvent,
-  GridDataResult,
-} from "@progress/kendo-angular-grid";
-import { ViewerService } from "../../services/viewer";
+import { KENDO_GRID } from "@progress/kendo-angular-grid";
+import { ViewerService, Viewer } from "../../services/viewer";
 
 @Component({
   selector: "app-live-grid",
@@ -349,56 +340,51 @@ import { ViewerService } from "../../services/viewer";
 export class LiveGrid {
   private viewerService = inject(ViewerService);
 
-  skip = signal(0);
+  viewers = signal<Viewer[]>([]);
+  loading = signal(false);
   isConnected = signal(false);
 
-  readonly pageSize = 100;
+  readonly pageSize = 1_000;
 
-  viewersResource = resource({
-    params: () => (this.isConnected() ? { skip: this.skip() } : undefined),
-    loader: ({ params }) =>
-      this.viewerService.fetchPage(params.skip, this.pageSize),
-  });
+  total = computed(() => this.viewers().length);
 
-  gridView = computed<GridDataResult>(
-    () => this.viewersResource.value() ?? { data: [], total: 0 },
-  );
-  total = computed(() => this.gridView().total);
-  loading = computed(() => this.viewersResource.isLoading());
-
-  trackById = (_index: number, item: any): number => item.id;
-
-  connect(): void {
+  async connect(): Promise<void> {
     this.isConnected.set(true);
+    await this.loadNextPage();
   }
 
-  onPageChange(event: PageChangeEvent): void {
-    this.skip.set(event.skip);
+  async loadNextPage(): Promise<void> {
+    if (this.loading()) return;
+
+    this.loading.set(true);
+    const result = await this.viewerService.fetchPage(
+      this.viewers().length,
+      this.pageSize,
+    );
+    this.viewers.update((current) => [...current, ...result.data]);
+    this.loading.set(false);
   }
 }
 ```
 
-Now let's add the template in `src/app/components/live-grid/live-grid.html`:
+Now the template in `src/app/components/live-grid/live-grid.html`:
 
 ```html
 <h2>Live Server Feed</h2>
 <p>
-  Total viewers: {{ total().toLocaleString() }} (Fetching only what's on screen)
+  Viewers loaded: {{ total().toLocaleString() }}
 </p>
 
 <button (click)="connect()">Connect to Live Feed</button>
 
 @if (isConnected()) {
 <kendo-grid
-  [data]="gridView()"
+  [data]="viewers()"
   [height]="600"
   scrollable="virtual"
   [rowHeight]="36"
-  [pageSize]="pageSize"
-  [skip]="skip()"
   [loading]="loading()"
-  [trackBy]="trackById"
-  (pageChange)="onPageChange($event)"
+  (scrollBottom)="loadNextPage()"
 >
   <kendo-grid-column field="id" title="#" [width]="70"></kendo-grid-column>
   <kendo-grid-column
@@ -420,7 +406,7 @@ Now let's add the template in `src/app/components/live-grid/live-grid.html`:
 }
 ```
 
-Now we need to wire this component into our app. Update `app.ts` to import `LiveGrid` and add it to the template:
+Wire the component into the app. Update `app.ts`:
 
 ```typescript
 import { Component } from "@angular/core";
@@ -434,32 +420,35 @@ import { LiveGrid } from "./components/live-grid/live-grid";
 export class App {}
 ```
 
-And replace `src/app/app.html` with:
+And `src/app/app.html`:
 
 ```html
 <h1>Super Bowl Viewers Dashboard</h1>
 <app-live-grid />
 ```
 
-Run `ng serve`, open your browser at `http://localhost:4200`, and click **"Connect to Live Feed"**. You will see the grid load the first page of data, and as you scroll, it fetches new pages on the fly. Notice the loading spinner that appears briefly on each fetch — that's Kendo Grid's built-in `[loading]` indicator at work.
+Run `ng serve`, open `http://localhost:4200`, and click **"Connect to Live Feed"**. You'll see the grid load the first 1,000 viewers. Now scroll down — when you reach the bottom, the grid fetches the next 1,000 viewers and appends them. The loading skeleton appears briefly while data is being fetched. Keep scrolling and watch the "Viewers loaded" counter grow.
 
-So, what is this code actually doing? The key is the `resource()` call. We pass it a `params` function that reads two signals: `isConnected()` and `skip()`. When `isConnected` is `false`, we return `undefined` which tells `resource()` to stay idle and not fetch anything. Once the user clicks "Connect" and `isConnected` becomes `true`, `resource()` calls our `loader` function to fetch the first page. From that point, every time `skip` changes (because the user scrolled), `resource()` automatically cancels any pending request and fires a new one.
+The implementation is simple:
 
-The `viewersResource` object also exposes an `isLoading()` signal, which we pass directly to the grid's `[loading]` property so Kendo Grid displays a built-in spinner while fetching data. We also set `changeDetection: ChangeDetectionStrategy.OnPush` on the component to prevent unnecessary re-renders — since we're using Signals exclusively, this is a natural fit. And `[trackBy]="trackById"` helps Angular efficiently track rows by their stable ID when data changes frequently, like viewers connecting and disconnecting during a live event.
+- **`connect()`** sets `isConnected` to `true` and loads the first page.
+- **`(scrollBottom)`** fires whenever the user scrolls to the end of the loaded data. We call `loadNextPage()`, which fetches the next batch and appends it to the existing `viewers` signal using `.update()`.
+- **`scrollable="virtual"`** ensures only the visible rows (~16) are in the DOM at any time, no matter how many thousands of viewers we've loaded.
+- **`[loading]`** shows Kendo Grid's built-in loading skeleton while a fetch is in progress.
+- **`ChangeDetectionStrategy.OnPush`** prevents unnecessary re-renders — since we use Signals exclusively, Angular only updates the view when signal values change.
 
-This approach is clean and fully native to Angular. Just Signals and `resource()`. We never load more than 100 rows at a time in memory, yet the user experiences scrolling through one million records smoothly.
-
+This is the core pattern for handling large datasets: virtual scrolling handles the rendering, and endless scrolling handles the data loading. The grid never holds more than what the user has scrolled through, and the DOM never holds more than what's visible.
 
 ## Recap: What We Built
 
 Let's review what we accomplished with our Super Bowl Viewers Dashboard:
 
-First, we added **row virtualization** using `scrollable="virtual"`. This is the secret to rendering only the visible rows and handling more than one million viewers without crashing. Then, we used **server-side paging** with the `(pageChange)` event, `GridDataResult`, and Angular's `resource()` API. This ensures we only fetch what we need and never overload the browser.
+First, we saw **the problem**: rendering tens of thousands of rows at once freezes the browser. Then we added **row virtualization** with `scrollable="virtual"` — the key to rendering only visible rows and handling large datasets without crashing.
 
-We built everything using **Angular Signals** — `signal()`, `computed()`, and `resource()` — for a modern, reactive architecture. We also used the **modern control flow** (`@if`) to keep our templates clean and easy to read.
+Finally, we combined virtual scrolling with **server-side data fetching** using the `(scrollBottom)` event. The grid loads data page by page as the user scrolls, keeping memory usage low while providing a smooth, endless scrolling experience.
 
-The Kendo UI Grid does the heavy lifting. We set a few properties, handle one event for server-side data, and our dashboard handles **millions of rows** without breaking a sweat.
+We built everything using **Angular Signals** — `signal()`, `computed()`, and `update()` — for a clean, modern, reactive architecture with `OnPush` change detection.
+
+The Kendo UI Grid does the heavy lifting. A few properties, one event, and your dashboard handles **millions of rows** without breaking a sweat.
 
 Happy coding!
-
-
