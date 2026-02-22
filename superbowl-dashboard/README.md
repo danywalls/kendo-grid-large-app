@@ -1,5 +1,9 @@
 # SuperbowlDashboard
 
+This project demonstrates how to implement server-side data virtualization with Kendo UI Grid in Angular, featuring endless scrolling for handling large datasets efficiently. The application uses a Super Bowl dataset to showcase performance optimization techniques when working with thousands of records.
+
+**Related Article**: This code is related to articles published at [Telerik Blogs by Dany Paredes](https://www.telerik.com/blogs/author/dany-paredes).
+
 This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.0.1.
 
 ## Development server
