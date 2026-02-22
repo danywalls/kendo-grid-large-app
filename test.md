@@ -111,12 +111,12 @@ const NOUNS = [
 export class ViewerService {
   private readonly TOTAL_VIEWERS = 1_000_000;
 
-  generateViewers(count: number): Viewer[] {
+  generateViewers(count: number, startId = 0): Viewer[] {
     const viewers: Viewer[] = [];
 
     for (let i = 0; i < count; i++) {
       viewers.push({
-        id: i + 1,
+        id: startId + i + 1,
         username: `${this.randomFrom(ADJECTIVES)}${this.randomFrom(NOUNS)}${this.randomBetween(1, 9999)}`,
         watchTimeMin: this.randomBetween(1, 240),
         isLive: Math.random() > 0.08,
@@ -134,7 +134,7 @@ export class ViewerService {
     await new Promise((resolve) => setTimeout(resolve, 80));
 
     return {
-      data: this.generateViewers(take),
+      data: this.generateViewers(take, skip),
       total: this.TOTAL_VIEWERS,
     };
   }
@@ -310,7 +310,7 @@ Even worse! What if this data is a live feed from the Super Bowl stream and we w
 
 Here's the reality: the Super Bowl has **120 million viewers**. You can't load all of them into the browser at once. Instead, the grid should fetch data page by page as the user scrolls — loading only what's needed, when it's needed.
 
-Kendo UI Grid supports this out of the box with the [`(scrollBottom)`](https://www.telerik.com/kendo-angular-ui/components/grid/api/gridcomponent#scrollbottom) event. When the user scrolls to the bottom of the current data, the grid fires this event, and we simply fetch the next page and append it. Combined with the virtual scrolling we already set up, this creates a seamless experience: the grid renders only visible rows while continuously loading more data in the background.
+Kendo UI Grid supports this out of the box with the [`(scrollBottom)`](https://www.telerik.com/kendo-angular-ui/components/grid/api/gridcomponent#scrollbottom) event. When the user scrolls to the bottom of the current data, the grid fires this event, and we simply fetch the next page and append it. Combined with scrollable mode, this creates a seamless experience: the grid renders only visible rows while continuously loading more data in the background.
 
 Let's build it. Generate a new component:
 
@@ -321,13 +321,7 @@ ng g c components/live-grid
 Open `src/app/components/live-grid/live-grid.ts` and replace the content with:
 
 ```typescript
-import {
-  Component,
-  inject,
-  signal,
-  computed,
-  ChangeDetectionStrategy,
-} from "@angular/core";
+import { Component, inject, signal, ChangeDetectionStrategy } from "@angular/core";
 import { KENDO_GRID } from "@progress/kendo-angular-grid";
 import { ViewerService, Viewer } from "../../services/viewer";
 
@@ -340,29 +334,28 @@ import { ViewerService, Viewer } from "../../services/viewer";
 export class LiveGrid {
   private viewerService = inject(ViewerService);
 
-  viewers = signal<Viewer[]>([]);
-  loading = signal(false);
   isConnected = signal(false);
+  loading = signal(false);
+  viewers = signal<Viewer[]>([]);
+  pageSize = 1_000;
 
-  readonly pageSize = 1_000;
-
-  total = computed(() => this.viewers().length);
-
-  async connect(): Promise<void> {
+  connect(): void {
     this.isConnected.set(true);
-    await this.loadNextPage();
+    this.loadMore();
   }
 
-  async loadNextPage(): Promise<void> {
+  onScrollBottom(): void {
     if (this.loading()) return;
+    this.loadMore();
+  }
 
+  private loadMore(): void {
     this.loading.set(true);
-    const result = await this.viewerService.fetchPage(
-      this.viewers().length,
-      this.pageSize,
-    );
-    this.viewers.update((current) => [...current, ...result.data]);
-    this.loading.set(false);
+    
+    this.viewerService.fetchPage(this.viewers().length, this.pageSize).then((result) => {
+      this.viewers.update((current) => [...current, ...result.data]);
+      this.loading.set(false);
+    });
   }
 }
 ```
@@ -371,37 +364,21 @@ Now the template in `src/app/components/live-grid/live-grid.html`:
 
 ```html
 <h2>Live Server Feed</h2>
-<p>
-  Viewers loaded: {{ total().toLocaleString() }}
-</p>
+<p>Viewers: {{ viewers().length.toLocaleString() }}</p>
 
-<button (click)="connect()">Connect to Live Feed</button>
+<button (click)="connect()" [disabled]="isConnected()">Connect to Live Feed</button>
 
 @if (isConnected()) {
-<kendo-grid
-  [data]="viewers()"
-  [height]="600"
-  scrollable="virtual"
-  [rowHeight]="36"
-  [loading]="loading()"
-  (scrollBottom)="loadNextPage()"
->
-  <kendo-grid-column field="id" title="#" [width]="70"></kendo-grid-column>
-  <kendo-grid-column
-    field="username"
-    title="Username"
-    [width]="180"
-  ></kendo-grid-column>
-  <kendo-grid-column
-    field="watchTimeMin"
-    title="Watch (min)"
-    [width]="110"
-  ></kendo-grid-column>
-  <kendo-grid-column
-    field="isLive"
-    title="Live"
-    [width]="70"
-  ></kendo-grid-column>
+<kendo-grid 
+    [data]="viewers()" 
+    [height]="600" 
+    scrollable="scrollable"
+    [loading]="loading()"
+    (scrollBottom)="onScrollBottom()">
+    <kendo-grid-column field="id" title="#" [width]="70"></kendo-grid-column>
+    <kendo-grid-column field="username" title="Username" [width]="180"></kendo-grid-column>
+    <kendo-grid-column field="watchTimeMin" title="Watch (min)" [width]="110"></kendo-grid-column>
+    <kendo-grid-column field="isLive" title="Live" [width]="70"></kendo-grid-column>
 </kendo-grid>
 }
 ```
@@ -427,17 +404,18 @@ And `src/app/app.html`:
 <app-live-grid />
 ```
 
-Run `ng serve`, open `http://localhost:4200`, and click **"Connect to Live Feed"**. You'll see the grid load the first 1,000 viewers. Now scroll down — when you reach the bottom, the grid fetches the next 1,000 viewers and appends them. The loading skeleton appears briefly while data is being fetched. Keep scrolling and watch the "Viewers loaded" counter grow.
+Run `ng serve`, open `http://localhost:4200`, and click **"Connect to Live Feed"**. You'll see the grid load the first 1,000 viewers. Now scroll down — when you reach the bottom, the grid fetches the next 1,000 viewers and appends them. The loading skeleton appears briefly while data is being fetched. Keep scrolling and watch the viewers counter grow.
 
 The implementation is simple:
 
-- **`connect()`** sets `isConnected` to `true` and loads the first page.
-- **`(scrollBottom)`** fires whenever the user scrolls to the end of the loaded data. We call `loadNextPage()`, which fetches the next batch and appends it to the existing `viewers` signal using `.update()`.
-- **`scrollable="virtual"`** ensures only the visible rows (~16) are in the DOM at any time, no matter how many thousands of viewers we've loaded.
+- **`connect()`** sets `isConnected` to `true` and calls `loadMore()` to fetch the first page.
+- **`(scrollBottom)`** fires whenever the user scrolls to the end of the loaded data. We call `onScrollBottom()` which checks if already loading and calls `loadMore()`.
+- **`loadMore()`** uses a Promise with `.then()` to accumulate data — we fetch the next batch and append it to the existing `viewers` signal using `.update()`.
+- **`scrollable="scrollable"`** enables endless scrolling mode, allowing the grid to detect when the user reaches the bottom.
 - **`[loading]`** shows Kendo Grid's built-in loading skeleton while a fetch is in progress.
 - **`ChangeDetectionStrategy.OnPush`** prevents unnecessary re-renders — since we use Signals exclusively, Angular only updates the view when signal values change.
 
-This is the core pattern for handling large datasets: virtual scrolling handles the rendering, and endless scrolling handles the data loading. The grid never holds more than what the user has scrolled through, and the DOM never holds more than what's visible.
+This is the core pattern for handling large datasets: scrollable mode handles detecting the scroll bottom, and we handle the data loading. The grid never holds more than what the user has scrolled through.
 
 ## Recap: What We Built
 
