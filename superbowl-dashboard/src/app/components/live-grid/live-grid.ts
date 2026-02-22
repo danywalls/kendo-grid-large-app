@@ -1,72 +1,51 @@
-import { Component, inject, signal, computed, resource, effect, untracked, DestroyRef, ChangeDetectionStrategy } from "@angular/core";
 import {
-    KENDO_GRID,
-    PageChangeEvent,
-    GridDataResult,
+  Component,
+  inject,
+  signal,
+  computed,
+  ChangeDetectionStrategy,
+} from "@angular/core";
+import {
+  KENDO_GRID,
+  PageChangeEvent,
+  GridDataResult,
 } from "@progress/kendo-angular-grid";
-import { ViewerService } from "../../services/viewer.service";
+import { ViewerService } from "../../services/viewer";
 
 @Component({
-    selector: "app-live-grid",
-    imports: [KENDO_GRID],
-    templateUrl: "./live-grid.html",
-    changeDetection: ChangeDetectionStrategy.OnPush,
-    styles: [`
-    :host ::ng-deep .k-grid-table tr { height: 36px; }
-  `]
+  selector: "app-live-grid",
+  imports: [KENDO_GRID],
+  templateUrl: "./live-grid.html",
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class LiveGrid {
-    private viewerService = inject(ViewerService);
-    private destroyRef = inject(DestroyRef);
+  private viewerService = inject(ViewerService);
 
-    skip = signal(0);
-    isConnected = signal(false);
-    liveTotal = signal(0);
-    readonly pageSize = 100;
+  skip = signal(0);
+  loading = signal(false);
+  isConnected = signal(false);
 
-    viewersResource = resource({
-        params: () => ({ skip: this.skip(), isConnected: this.isConnected() }),
-        loader: async ({ params, abortSignal }) => {
-            if (!params.isConnected) return [];
-            return this.viewerService.fetchPage(params.skip, this.pageSize, abortSignal);
-        },
-    });
+  readonly pageSize = 100;
 
-    private gridData = signal<any[]>([]);
+  private gridData = signal<GridDataResult>({ data: [], total: 0 });
 
-    constructor() {
-        effect(() => {
-            const value = this.viewersResource.value();
-            if (value !== undefined) {
-                untracked(() => this.gridData.set(value));
-            }
-        });
-    }
+  gridView = computed<GridDataResult>(() => this.gridData());
+  total = computed(() => this.gridData().total);
 
-    gridView = computed<GridDataResult>(() => ({
-        data: this.gridData(),
-        total: this.liveTotal()
-    }));
+  async connect(): Promise<void> {
+    this.isConnected.set(true);
+    await this.loadPage(0);
+  }
 
-    connect(): void {
-        if (this.isConnected()) return;
-        this.isConnected.set(true);
+  async onPageChange(event: PageChangeEvent): Promise<void> {
+    this.skip.set(event.skip);
+    await this.loadPage(event.skip);
+  }
 
-        const timerId = setInterval(() => {
-            const current = this.liveTotal();
-            if (current < 1_000_000) {
-                this.liveTotal.set(Math.min(1_000_000, current + 1000));
-            } else {
-                clearInterval(timerId);
-            }
-        }, 1000);
-
-        this.destroyRef.onDestroy(() => clearInterval(timerId));
-    }
-
-    onPageChange(event: PageChangeEvent): void {
-        this.skip.set(event.skip);
-    }
-
-    trackById = (_index: number, item: any): any => item?.id ?? _index;
+  private async loadPage(skip: number): Promise<void> {
+    this.loading.set(true);
+    const result = await this.viewerService.fetchPage(skip, this.pageSize);
+    this.gridData.set(result);
+    this.loading.set(false);
+  }
 }

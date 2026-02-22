@@ -1,0 +1,16 @@
+<h2>Live Server Feed</h2>
+<p>
+    Total viewers: {{ total().toLocaleString() }} (Fetching only what's on screen)
+</p>
+
+<button (click)="connect()">Connect to Live Feed</button>
+
+@if (isConnected()) {
+<kendo-grid [data]="gridView()" [height]="600" scrollable="virtual" [rowHeight]="36" [pageSize]="pageSize"
+    [skip]="skip()" [loading]="loading()" (pageChange)="onPageChange($event)">
+    <kendo-grid-column field="id" title="#" [width]="70"></kendo-grid-column>
+    <kendo-grid-column field="username" title="Username" [width]="180"></kendo-grid-column>
+    <kendo-grid-column field="watchTimeMin" title="Watch (min)" [width]="110"></kendo-grid-column>
+    <kendo-grid-column field="isLive" title="Live" [width]="70"></kendo-grid-column>
+</kendo-grid>
+}
