@@ -28,7 +28,7 @@ export class LiveGrid {
 
   private loadMore(): void {
     this.loading.set(true);
-    
+
     this.viewerService.fetchPage(this.viewers().length, this.pageSize).then((result) => {
       this.viewers.update((current) => [...current, ...result.data]);
       this.loading.set(false);

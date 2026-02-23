@@ -4,11 +4,7 @@
 <button (click)="connect()" [disabled]="isConnected()">Connect to Live Feed</button>
 
 @if (isConnected()) {
-<kendo-grid 
-    [data]="viewers()" 
-    [height]="600" 
-    scrollable="scrollable"
-    [loading]="loading()"
+<kendo-grid [data]="viewers()" [height]="600" scrollable="scrollable" [loading]="loading()"
     (scrollBottom)="onScrollBottom()">
     <kendo-grid-column field="id" title="#" [width]="70"></kendo-grid-column>
     <kendo-grid-column field="username" title="Username" [width]="180"></kendo-grid-column>
